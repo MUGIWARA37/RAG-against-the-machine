@@ -1,4 +1,4 @@
-# Third-party source code
+jj# Third-party source code
 vllm-0.10.1/
 
 # Python
@@ -46,3 +46,6 @@ Thumbs.db
 *.onnx
 *.safetensors
 *.gguf
+
+# Project notes
+knowlege.md

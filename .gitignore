@@ -1,6 +1,3 @@
-jj# Third-party source code
-vllm-0.10.1/
-
 # Python
 __pycache__/
 *.py[cod]

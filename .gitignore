@@ -39,13 +39,5 @@ Thumbs.db
 # Logs
 *.log
 
-# Model weights / large files
-*.bin
-*.pt
-*.pth
-*.onnx
-*.safetensors
-*.gguf
-
 # Project notes
 knowlege.md

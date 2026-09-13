@@ -1,4 +1,6 @@
-from pathlib import Path                                                                                                             
+from pathlib import Path
+from rank_bm25 import BM25Okapi  
+import pickle                                                                                                           
 from tqdm import tqdm                                                                                                                
 from src.indexing.chunking import chunk_markdown, chunk_python                                                                       
                                                                                                                                      
@@ -30,3 +32,19 @@ def gather_corpus(directory_path: str):
                 print(f"Skipping {file_path} due to error: {e}")                                                                     
                                                                                                                                      
     return master_chunks
+
+def build_and_save_index(master_chunks: list, save_dir: str = "data/processed"):
+    print("Tokenizing corpus and building BM25 index...")
+    tokenized_corpus = [chunk["text"].lower().split() for chunk in master_chunks]
+    bm25 = BM25Okapi(tokenized_corpus)
+    
+    print(f"Saving index to {save_dir}...")
+    save_path = Path(save_dir)
+    save_path.mkdir(parents=True, exist_ok=True)
+    index_file = save_path / "bm25_index.pkl"
+    with open(index_file, "wb") as f:
+        pickle.dump(bm25, f)
+    master_index = save_path / "chunks.pkl"
+    with open(master_index, "wb") as f:
+        pickle.dump(master_chunks, f)
+    print(f"Indexing complete!")

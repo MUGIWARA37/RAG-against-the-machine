@@ -11,6 +11,7 @@ eggs/
 *.whl
 
 # Virtual environments
+.venv
 .venv/
 venv/
 env/

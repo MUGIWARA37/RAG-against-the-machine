@@ -1,65 +1,113 @@
 from typing import List
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
 from src.models import MinimalSource
 
 
-def build_prompt(query: str, sources: List[MinimalSource], master_chunks: list[dict]) -> str:
+class Small_llm:
     """
-    Constructs a prompt for the LLM combining the user's query and the retrieved context.
+    A wrapper class to manage the loading and text generation of a causal
+    language model using Hugging Face Transformers.
+    """
+
+    def __init__(self, model_id: str = "Qwen/Qwen3-0.6B") -> None:
+        """
+        Initializes the tokenizer and model.
+
+        Args:
+            model_id (str): The Hugging Face model identifier.
+                Defaults to "Qwen/Qwen3-0.6B".
+
+        Raises:
+            Exception: If the model cannot be loaded from Hugging Face.
+        """
+        self.model_id = model_id
+
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_id, torch_dtype=torch.float32
+            )
+        except Exception:
+            raise Exception(
+                f"Error: loading the model {self.model_id} "
+                "make sure this model exists !!"
+            )
+
+    def generate(self, prompt: str) -> str:
+        """
+        Generates a natural language response based on the provided prompt.
+
+        Args:
+            prompt (str): The formatted prompt string.
+
+        Returns:
+            str: The generated text, with the original prompt stripped out.
+        """
+        tokenized_prompt = self.tokenizer(prompt, return_tensors="pt")
+
+        tokenized_prompt_lengh = tokenized_prompt.input_ids.shape[1]
+
+        logits = self.model.generate(
+            **tokenized_prompt,
+            max_new_tokens=200
+        )[0][tokenized_prompt_lengh:]
+
+        output = self.tokenizer.decode(logits, skip_special_tokens=True)
+
+        return str(output).strip()
+
+
+def build_prompt(
+    query: str, sources: List[MinimalSource], master_chunks: list[dict]
+) -> str:
+    """
+    Constructs a prompt for the LLM combining the user's query and the
+    retrieved context.
 
     Args:
         query (str): The user's question.
         sources (List[MinimalSource]): The retrieved source metadata.
-        master_chunks (list[dict]): The list of all chunks to extract the actual text context.
+        master_chunks (list[dict]): The list of all chunks to extract text.
 
     Returns:
         str: The fully formatted prompt string ready to be fed to the model.
-    
-    Tips:
-        - Iterate over `sources` to find the matching text in `master_chunks` (using file_path and character indices).
-        - Concatenate the texts into a single context string.
-        - Create a prompt template like: "Context: {context}\n\nQuestion: {query}\nAnswer:"
     """
     chunks_lookup = {
-        (chunk["file_path"], chunk["first_character_index"], chunk["last_character_index"]): chunk["text"]
-         for chunk in master_chunks            
-        }
-    
+        (
+            chunk["file_path"],
+            chunk["first_character_index"],
+            chunk["last_character_index"]
+        ): chunk["text"]
+        for chunk in master_chunks
+    }
+
     context = []
     for source in sources:
-        context.append(chunks_lookup.get((source.file_path, source.first_character_index, source.last_character_index), ""))
-    
-    prompt = (
-        f"Context: {"\n\n".join(context)}\n\n",
-        f"Qustion: {query}",
-        f"Answear:"
-    )
-    
+        key = (
+            source.file_path,
+            source.first_character_index,
+            source.last_character_index
+        )
+        context.append(chunks_lookup.get(key, ""))
+
+    joined_context = "\n\n".join(context)
+
+    prompt = f"Context: {joined_context}\n\nQuestion: {query}\nAnswer:"
+
     return prompt
-    
-    
-    
 
 
-def generate_answer(prompt: str) -> str:
+def generate_answer(prompt: str, model: Small_llm) -> str:
     """
-    Generates an answer from the Qwen/Qwen3-0.6B model given a prompt.
+    Generates an answer from the language model given a formatted prompt.
 
     Args:
-        prompt (str): The formatted prompt containing the context and the question.
+        prompt (str): The formatted prompt containing context and question.
+        model (Small_llm): The instantiated model wrapper class.
 
     Returns:
         str: The generated natural language answer.
-    
-    Tips:
-        - Ensure you load the tokenizer and model (e.g., `AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B")`).
-        - Tokenize the input prompt.
-        - Use the model's `generate()` method (consider setting `max_new_tokens` to limit the length).
-        - Decode the generated tokens back to a string and return the newly generated part.
-        - Note: To avoid reloading the model for every question, you might want to load the model
-          globally or encapsulate this in a class.
     """
-    # 1. Load tokenizer and model (if not already loaded).
-    # 2. Tokenize the input prompt.
-    # 3. Generate output using the model.
-    # 4. Decode and return the output.
-    pass
+    return model.generate(prompt)

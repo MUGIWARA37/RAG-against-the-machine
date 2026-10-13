@@ -23,7 +23,7 @@ class Cli:
 
     def search(self, query, k=5):
         question = UnansweredQuestion(question=query)
-        results = run_search([question], 5)
+        results = run_search([question], k)
         for source in results.search_results[0].retrieved_sources:
              print(f"{source.file_path} [{source.first_character_index}:{source.last_character_index}]")
 
@@ -36,8 +36,8 @@ class Cli:
 
         questions = [
             UnansweredQuestion(
-                question_id=["question_id"],
-                question=["question"]
+                question_id=item["question_id"],
+                question=item["question"]
             )
             for item in raw_questions
         ]

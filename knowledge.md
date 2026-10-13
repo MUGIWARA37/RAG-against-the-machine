@@ -30,44 +30,62 @@ The industry standard for lexical search, expanding on TF-IDF to solve two major
 ### Retrieval
 The active phase where a user's natural language query is tokenized and run against the index. The system ranks every chunk in the corpus using BM25 or TF-IDF and returns the top-k results. The major challenge here is the vocabulary mismatch: a user might ask about "setting up" while the code uses the term "configuration."
 
-### Recall@k
+### Recall@k & IoU (Intersection over Union)
 An evaluation metric used to grade the retrieval system. Recall measures the proportion of *actual* correct answers that your system successfully found. 
-* **@k:** Means we only look at the top `k` results (e.g., top 5). If the correct answer is ranked 6th, it counts as a failure for Recall@5.
-* **IoU > 0.05:** In this project, you don't have to retrieve the exact character-for-character string. As long as the chunk you retrieve overlaps with the ground-truth answer by at least 5% (Intersection over Union), it counts as a success.
+* **@k:** Means we only look at the top `k` results (e.g., top 1, 3, 5, 10).
+* **IoU > 0.05:** You do not have to match exact character boundaries. As long as the retrieved snippet is from the exact same file and its character overlap with the ground truth satisfies `intersection / union > 0.05`, it is counted as a match.
+* **Target Thresholds:** $\ge 80\%$ Recall@5 on docs questions, and $\ge 50\%$ Recall@5 on code questions.
 
 ### Augmentation / Prompting
-The process of dynamically constructing the input for the LLM. The system takes the raw retrieved chunks, formats them nicely, appends the user's original query, and wraps them in strict system instructions (e.g., "Answer this question using ONLY the context provided below. If the answer is not in the context, say 'I don't know'").
+The process of dynamically constructing the input for the LLM. The system takes the raw retrieved chunks, formats them nicely, appends the user's original query, and wraps them in strict system instructions.
 
 ### Generation
-The final step where the LLM (`Qwen/Qwen3-0.6B`) reads the augmented prompt. Because `Qwen3-0.6B` is a very small model (0.6 Billion parameters), it has limited logical reasoning capabilities. Therefore, the quality of the generation relies heavily on the quality of the retrieval and the clarity of the prompt.
+The final step where the LLM (`Qwen/Qwen3-0.6B`) reads the augmented prompt. Because `Qwen3-0.6B` is a small model (0.6B parameters), the answer quality relies heavily on clean context retrieval and a well-structured prompt.
 
 ### Pydantic Models
-A Python library that enforces data validation at runtime using Python type hints. In a complex pipeline (Parsing -> Indexing -> Retrieval -> LLM), it is very easy for data structures to get messy. Pydantic ensures that a `MinimalSource` object always has exactly a `file_path`, a `first_character_index`, and a `last_character_index` of the correct type, failing loudly if data is malformed.
+A Python library that enforces data validation at runtime using Python type hints. Ensures strict data integrity for `MinimalSource`, `UnansweredQuestion`, `AnsweredQuestion`, `StudentSearchResults`, `StudentSearchResultsAndAnswer`, and `RagDataset`.
 
 ### Python Fire
-A library developed by Google that automatically generates Command-Line Interfaces (CLIs) from standard Python code. It uses Python's introspection to look at your functions and turns their arguments into CLI flags (e.g., `def index(max_chunk_size=2000)` automatically becomes `--max_chunk_size`).
+A Google library that turns classes and functions directly into CLI commands, converting arguments into CLI flags automatically.
 
 ### Moulinette
-The automated grading binary provided by the school. It runs your retrieval outputs against a hidden ground-truth dataset to strictly calculate your Recall@k scores and ensure you meet the minimum thresholds (80% for docs, 50% for code).
+The automated grading binary provided by 42. It evaluates student search outputs against ground truth datasets to calculate official Recall@k scores.
 
 ---
 
 ## Currently Implemented
-- **Data Models**: Pydantic models for inputs and outputs (`src/models.py`).
-- **Chunking Strategy**: Python and Markdown chunking with Langchain (`src/indexing/chunking.py`).
-- **Index Building**: BM25 index creation and serialization (`src/indexing/builder.py`).
-- **Retrieval**: Basic BM25 search matching tokenized queries against index (`src/retrieval/searcher.py`).
 
-## Current Task: LLM Generation (`src/generation/llm.py`)
-- **Objective**: Implement text generation using the `Qwen/Qwen3-0.6B` model.
+- **Data Models** (`src/models.py`): Complete Pydantic schemas for questions, sources, search results, and answers.
+- **Chunking Strategy** (`src/indexing/chunking.py`): Markdown header splitting and Python AST/code splitting via LangChain.
+- **Index Building** (`src/indexing/builder.py`): Crawls `data/raw/` and serializes `bm25_index.pkl` and `chunks.pkl` in `data/processed/`.
+- **Retrieval Engine** (`src/retrieval/searcher.py`): BM25 ranking returning ranked `MinimalSource` objects.
+- **LLM Generation** (`src/generation/llm.py`): `Small_llm` wrapper loading `Qwen/Qwen3-0.6B`, context formatting via `build_prompt`, and text generation via `generate_answer`.
+- **Makefile** (`Makefile`): Mandatory targets `install`, `run`, `debug`, `clean`, `lint`, and `lint-strict`.
+- **CLI Architecture** (`src/__main__.py` & `src/cli.py`):
+  - `index`: Ingests corpus and builds BM25 index.
+  - `search`: Single-query search printing top-k file locations and character ranges. (Tested & verified).
+  - `search_dataset`: Batch search across dataset JSON files, producing validated `StudentSearchResults` JSON.
+  - `answer`: Single-query search + LLM answer generation.
+  - `answer_dataset`: Batch answer generation using `Small_llm` with `tqdm` progress tracking, producing `StudentSearchResultsAndAnswer` JSON.
+- **Environment & Storage**: Large packages (`torch`, `transformers`) and caches (`uv`, Hugging Face) redirected to `/goinfre` to prevent home quota exhaustion.
+
+---
+
+## Current Task: Local Evaluator (`evaluate` command)
+
+- **Objective**: Implement local Recall@k scoring based on 1D character-span IoU > 0.05.
 - **Requirements**:
-  - Receive retrieved chunks (context) and the user query.
-  - Construct a strict prompt combining the context and query.
-  - Run inference with `Qwen3-0.6B`.
-  - Return the generated answer as a string.
+  - Compare student search outputs (`student_search_results_path`) against ground truth (`dataset_path`).
+  - Calculate Recall@1, Recall@3, Recall@5, and Recall@10.
+  - Match questions by `question_id` and evaluate source overlaps per question.
+  - Display clean evaluation summary table matching moulinette format.
+
+---
 
 ## Next Steps Planned
-1. Integrate Python Fire for the CLI (`cli.py`, `__main__.py`).
-2. Make `max_chunk_size` dynamic via CLI arguments.
-3. Wire everything up into the required CLI commands.
-4. Implement a local `evaluate` function.
+
+1. Implement IoU calculation and local evaluation function (`evaluate`).
+2. Run benchmark on `dataset_docs_public.json` and `dataset_code_public.json` to verify $\ge 80\%$ (docs) and $\ge 50\%$ (code) Recall@5 thresholds.
+3. Make `max_chunk_size` dynamic throughout `gather_corpus`, `chunk_markdown`, and `chunk_python`.
+4. Update `README.md` to conform to all 42 subject sections.
+5. Run `make lint` and ensure 100% compliance with `flake8` and `mypy`.

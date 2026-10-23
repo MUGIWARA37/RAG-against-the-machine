@@ -1,6 +1,5 @@
 from typing import Any
 from langchain_text_splitters import (
-    MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
     Language
 )
@@ -23,34 +22,24 @@ def chunk_markdown(text: str, file_path: str) -> list[dict[str, Any]]:
             raise ValueError(
                 "The file path must point to a markdown file (.md)."
             )
-        headers_to_split_on = [
-            ("#", "Header 1"),
-            ("##", "Header 2"),
-            ("###", "Header 3"),
-        ]
-
-        splitter = MarkdownHeaderTextSplitter(
-            headers_to_split_on=headers_to_split_on,
-            strip_headers=False
+        splitter = RecursiveCharacterTextSplitter.from_language(
+                    language=Language.MARKDOWN,
+                    chunk_size=2000,
+                    chunk_overlap=0
         )
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=2000,
-            chunk_overlap=0
-        )
-        chunks = text_splitter.split_documents(splitter.split_text(text))
+        chunks = splitter.split_text(text)
 
         extracted_data = []
         search_start = 0
         for chunk in chunks:
-            content = chunk.page_content
-            start_index = text.find(content, search_start)
+            start_index = text.find(chunk, search_start)
             if start_index != -1:
-                end_index = start_index + len(content)
+                end_index = start_index + len(chunk)
                 extracted_data.append({
                     "file_path": file_path,
                     "first_character_index": start_index,
                     "last_character_index": end_index,
-                    "text": content
+                    "text": chunk
                 })
                 search_start = end_index
 

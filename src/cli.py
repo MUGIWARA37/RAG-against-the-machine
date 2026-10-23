@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 from src.indexing.builder import gather_corpus, build_and_save_index
 from src.retrieval.searcher import search_dataset as run_search
+from src.retrieval.evaluator import evaluate_search_results
 from src.generation.llm import Small_llm, build_prompt, generate_answer
 from src.models import (
     UnansweredQuestion,
@@ -113,5 +114,10 @@ class Cli:
 
 
     
-    def evaluate(self, student_search_results_path, dataset_path):
-        ...
+    def evaluate(
+        self,
+        student_search_results_path: str,
+        dataset_path: str
+    ) -> None:
+        """Report recall@k against a ground-truth dataset."""
+        evaluate_search_results(student_search_results_path, dataset_path)

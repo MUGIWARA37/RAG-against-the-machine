@@ -242,6 +242,15 @@ class Cli:
             )
             return
 
+        chunks_lookup = {
+            (
+                c["file_path"],
+                c["first_character_index"],
+                c["last_character_index"],
+            ): str(c["text"])
+            for c in master_chunks
+        }
+
         model = Small_llm()
         answers = []
 
@@ -251,7 +260,10 @@ class Cli:
             unit="answer",
         ):
             prompt = build_prompt(
-                item.question, item.retrieved_sources, master_chunks
+                item.question,
+                item.retrieved_sources,
+                master_chunks,
+                chunks_lookup,
             )
             ans = generate_answer(prompt, model)
             answers.append(

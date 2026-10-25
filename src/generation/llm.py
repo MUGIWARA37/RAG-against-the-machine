@@ -24,11 +24,20 @@ class Small_llm:
         """
         self.model_id = model_id
 
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif (
+            hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
+
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(model_id)
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_id, torch_dtype=torch.float32
-            )
+            self.model = AutoModelForCausalLM.from_pretrained(model_id)
+            self.model.to(self.device)  # type: ignore[arg-type]
         except Exception:
             raise Exception(
                 f"Error: loading the model {self.model_id} "
@@ -45,14 +54,17 @@ class Small_llm:
         Returns:
             str: The generated text, with the original prompt stripped out.
         """
-        tokenized_prompt = self.tokenizer(prompt, return_tensors="pt")
+        tokenized_prompt = self.tokenizer(
+            prompt, return_tensors="pt"
+        ).to(self.device)
 
         tokenized_prompt_lengh = tokenized_prompt.input_ids.shape[1]
 
-        logits = self.model.generate(  # type: ignore[misc]
-            **tokenized_prompt,
-            max_new_tokens=200
-        )[0][tokenized_prompt_lengh:]
+        with torch.inference_mode():
+            logits = self.model.generate(  # type: ignore[misc]
+                **tokenized_prompt,
+                max_new_tokens=100
+            )[0][tokenized_prompt_lengh:]
 
         output = self.tokenizer.decode(logits, skip_special_tokens=True)
 
@@ -62,7 +74,8 @@ class Small_llm:
 def build_prompt(
     query: str,
     sources: List[MinimalSource],
-    master_chunks: list[dict[str, Any]]
+    master_chunks: list[dict[str, Any]],
+    chunks_lookup: dict[tuple[str, int, int], str] | None = None,
 ) -> str:
     """
     Constructs a prompt for the LLM combining the user's query and the
@@ -72,25 +85,28 @@ def build_prompt(
         query (str): The user's question.
         sources (List[MinimalSource]): The retrieved source metadata.
         master_chunks (list[dict[str, Any]]): All chunk dictionaries.
+        chunks_lookup (dict[tuple[str, int, int], str] | None): Optional
+            precomputed lookup mapping from (path, start, end) to text.
 
     Returns:
         str: The fully formatted prompt string ready to be fed to the model.
     """
-    chunks_lookup = {
-        (
-            chunk["file_path"],
-            chunk["first_character_index"],
-            chunk["last_character_index"]
-        ): chunk["text"]
-        for chunk in master_chunks
-    }
+    if chunks_lookup is None:
+        chunks_lookup = {
+            (
+                chunk["file_path"],
+                chunk["first_character_index"],
+                chunk["last_character_index"],
+            ): str(chunk["text"])
+            for chunk in master_chunks
+        }
 
     context = []
     for source in sources:
         key = (
             source.file_path,
             source.first_character_index,
-            source.last_character_index
+            source.last_character_index,
         )
         context.append(chunks_lookup.get(key, ""))
 

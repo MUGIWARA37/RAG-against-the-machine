@@ -15,5 +15,4 @@ def tokenizer(text: str) -> List[str]:
                 if len(part) > 1:
                     tokens.append(part)
 
-
     return tokens

@@ -1,6 +1,7 @@
 import pickle                                                                                                                                         
 from pathlib import Path                                                                                                                              
 from src.models import MinimalSearchResults, MinimalSource, StudentSearchResults, UnansweredQuestion
+from src.indexing.tokenizer import tokenizer
 
 def search_dataset(questions: list[UnansweredQuestion], k: int = 5, folder_path: Path = Path("data/processed")) -> StudentSearchResults:
     """
@@ -25,7 +26,7 @@ def search_dataset(questions: list[UnansweredQuestion], k: int = 5, folder_path:
 
     results = []
     for question in questions:
-        tokenized_query = question.question.lower().split()
+        tokenized_query = tokenizer(question.question)
         
         top_chunks = bm25.get_top_n(tokenized_query, master_chunks, n=k)
         

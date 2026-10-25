@@ -2,7 +2,8 @@ import pickle
 from pathlib import Path
 from typing import Any
 
-from rank_bm25 import BM25Okapi
+from src.indexing.bm25 import Bm25
+from src.indexing.tokenizer import tokenizer
 from tqdm import tqdm
 
 from src.indexing.chunking import chunk_markdown, chunk_python
@@ -45,9 +46,9 @@ def build_and_save_index(
     """
     print("Tokenizing corpus and building BM25 index...")
     tokenized_corpus = [
-        chunk["text"].lower().split() for chunk in master_chunks
+        tokenizer(chunk["file_path"] + " " + chunk["text"]) for chunk in master_chunks
     ]
-    bm25 = BM25Okapi(tokenized_corpus)
+    bm25 = Bm25(tokenized_corpus)
 
     print(f"Saving index to {save_dir}...")
     save_path = Path(save_dir)

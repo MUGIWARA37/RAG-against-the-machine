@@ -53,11 +53,14 @@ def is_source_match(
     if retrieved.file_path != ground_truth.get("file_path"):
         return False
 
+    gt_start = int(ground_truth.get("first_character_index", 0) or 0)
+    gt_end = int(ground_truth.get("last_character_index", 0) or 0)
+
     iou = compute_iou(
         retrieved.first_character_index,
         retrieved.last_character_index,
-        ground_truth.get("first_character_index"),
-        ground_truth.get("last_character_index")
+        gt_start,
+        gt_end,
     )
 
     return iou > iou_threshold
@@ -81,12 +84,44 @@ def evaluate_search_results(
     Returns:
         Dict[int, float]: Mapping of k to average Recall@k score.
     """
-    with open(student_search_results_path, "r", encoding="utf-8") as f:
-        student_data = json.load(f)
-    student_obj = StudentSearchResults.model_validate(student_data)
+    try:
+        with open(student_search_results_path, "r", encoding="utf-8") as f:
+            student_data = json.load(f)
+        student_obj = StudentSearchResults.model_validate(student_data)
+    except FileNotFoundError:
+        print(f"Error: File not found at '{student_search_results_path}'.")
+        return {}
+    except PermissionError:
+        print(
+            "Error: Permission denied accessing "
+            f"'{student_search_results_path}'."
+        )
+        return {}
+    except json.JSONDecodeError:
+        print(
+            f"Error: Failed to parse '{student_search_results_path}'. "
+            "Invalid JSON."
+        )
+        return {}
+    except Exception as e:
+        print(f"Error loading student search results: {e}")
+        return {}
 
-    with open(dataset_path, "r", encoding="utf-8") as f:
-        gt_data = json.load(f)
+    try:
+        with open(dataset_path, "r", encoding="utf-8") as f:
+            gt_data = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: File not found at '{dataset_path}'.")
+        return {}
+    except PermissionError:
+        print(f"Error: Permission denied accessing '{dataset_path}'.")
+        return {}
+    except json.JSONDecodeError:
+        print(f"Error: Failed to parse '{dataset_path}'. Invalid JSON.")
+        return {}
+    except Exception as e:
+        print(f"Error loading ground truth dataset: {e}")
+        return {}
 
     gt_by_id = {
         item["question_id"]: item.get("sources", [])
@@ -109,14 +144,20 @@ def evaluate_search_results(
 
             found_count = 0
             for gt_src in gt_sources:
-                if any(is_source_match(ret_src, gt_src, iou_threshold) for ret_src in top_k):
+                matched = any(
+                    is_source_match(ret_src, gt_src, iou_threshold)
+                    for ret_src in top_k
+                )
+                if matched:
                     found_count += 1
 
             recall_sums[k] += found_count / len(gt_sources)
 
     recalls = {}
     for k in k_values:
-        recalls[k] = recall_sums[k] / evaluated_count if evaluated_count > 0 else 0.0
+        recalls[k] = (
+            recall_sums[k] / evaluated_count if evaluated_count > 0 else 0.0
+        )
 
     print("Student data is valid: True")
     print(f"Total number of questions evaluated: {evaluated_count}")

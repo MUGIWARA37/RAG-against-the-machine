@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, List
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
@@ -49,7 +49,7 @@ class Small_llm:
 
         tokenized_prompt_lengh = tokenized_prompt.input_ids.shape[1]
 
-        logits = self.model.generate(
+        logits = self.model.generate(  # type: ignore[misc]
             **tokenized_prompt,
             max_new_tokens=200
         )[0][tokenized_prompt_lengh:]
@@ -60,7 +60,9 @@ class Small_llm:
 
 
 def build_prompt(
-    query: str, sources: List[MinimalSource], master_chunks: list[dict]
+    query: str,
+    sources: List[MinimalSource],
+    master_chunks: list[dict[str, Any]]
 ) -> str:
     """
     Constructs a prompt for the LLM combining the user's query and the
@@ -69,7 +71,7 @@ def build_prompt(
     Args:
         query (str): The user's question.
         sources (List[MinimalSource]): The retrieved source metadata.
-        master_chunks (list[dict]): The list of all chunks to extract text.
+        master_chunks (list[dict[str, Any]]): All chunk dictionaries.
 
     Returns:
         str: The fully formatted prompt string ready to be fed to the model.

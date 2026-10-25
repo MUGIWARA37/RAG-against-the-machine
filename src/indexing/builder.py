@@ -9,9 +9,18 @@ from tqdm import tqdm
 from src.indexing.chunking import chunk_markdown, chunk_python
 
 
-def gather_corpus(directory_path: str) -> list[dict[str, Any]]:
+def gather_corpus(
+    directory_path: str, max_chunk_size: int = 2000
+) -> list[dict[str, Any]]:
     """
     Crawls a directory, reads .md and .py files, and chunks them.
+
+    Args:
+        directory_path (str): Root directory containing files to crawl.
+        max_chunk_size (int): Maximum character size for each chunk.
+
+    Returns:
+        list[dict[str, Any]]: Master list of all chunk dictionaries.
     """
     master_chunks: list[dict[str, Any]] = []
 
@@ -27,10 +36,16 @@ def gather_corpus(directory_path: str) -> list[dict[str, Any]]:
                     text = f.read()
 
                 if ext == ".md":
-                    chunks = chunk_markdown(text, str(file_path))
+                    chunks = chunk_markdown(
+                        text, str(file_path), max_chunk_size
+                    )
                 else:
-                    chunks = chunk_python(text, str(file_path))
+                    chunks = chunk_python(
+                        text, str(file_path), max_chunk_size
+                    )
                 master_chunks.extend(chunks)
+            except PermissionError:
+                print(f"Skipping {file_path}: Permission denied.")
             except Exception as e:
                 print(f"Skipping {file_path} due to error: {e}")
 
@@ -43,10 +58,15 @@ def build_and_save_index(
 ) -> None:
     """
     Tokenizes the corpus, builds a BM25 index, and saves it to disk.
+
+    Args:
+        master_chunks (list[dict[str, Any]]): List of chunk dictionaries.
+        save_dir (str): Directory where index files are saved.
     """
     print("Tokenizing corpus and building BM25 index...")
     tokenized_corpus = [
-        tokenizer(chunk["file_path"] + " " + chunk["text"]) for chunk in master_chunks
+        tokenizer(chunk["file_path"] + " " + chunk["text"])
+        for chunk in master_chunks
     ]
     bm25 = Bm25(tokenized_corpus)
 
@@ -54,12 +74,16 @@ def build_and_save_index(
     save_path = Path(save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
 
-    index_file = save_path / "bm25_index.pkl"
-    with open(index_file, "wb") as f:
-        pickle.dump(bm25, f)
+    try:
+        index_file = save_path / "bm25_index.pkl"
+        with open(index_file, "wb") as f:
+            pickle.dump(bm25, f)
 
-    master_index = save_path / "chunks.pkl"
-    with open(master_index, "wb") as f:
-        pickle.dump(master_chunks, f)
+        master_index = save_path / "chunks.pkl"
+        with open(master_index, "wb") as f:
+            pickle.dump(master_chunks, f)
+    except PermissionError:
+        print(f"Error: Permission denied saving index to '{save_dir}'.")
+        return
 
     print("Indexing complete!")

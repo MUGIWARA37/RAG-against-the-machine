@@ -1,41 +1,13 @@
-# Python
+# Bytecode and caches
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
-eggs/
-*.whl
+.mypy_cache/
 
-# Virtual environments
+# Environment and editor
 .venv
-.venv/
-venv/
-env/
-
-# Environment variables / secrets
-.env
-.env.*
-
-# IDE
 .vscode/
-.idea/
-*.swp
-*.swo
-*~
+.env
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Logs
+# Logs and local files
 *.log
-
-# Project notes
-knowlege.md
+test_commands.md

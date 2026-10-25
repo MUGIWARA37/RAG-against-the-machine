@@ -259,13 +259,19 @@ class Cli:
             desc="Generating answers",
             unit="answer",
         ):
-            prompt = build_prompt(
-                item.question,
-                item.retrieved_sources,
-                master_chunks,
-                chunks_lookup,
-            )
-            ans = generate_answer(prompt, model)
+            if not item.retrieved_sources:
+                ans = (
+                    "The provided context does not contain enough "
+                    "information to answer this question."
+                )
+            else:
+                prompt = build_prompt(
+                    item.question,
+                    item.retrieved_sources,
+                    master_chunks,
+                    chunks_lookup,
+                )
+                ans = generate_answer(prompt, model)
             answers.append(
                 MinimalAnswer(
                     question_id=item.question_id,

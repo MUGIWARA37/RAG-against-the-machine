@@ -112,7 +112,19 @@ def build_prompt(
 
     joined_context = "\n\n".join(context)
 
-    prompt = f"Context: {joined_context}\n\nQuestion: {query}\nAnswer:"
+    system_instruction = (
+        "You are a helpful assistant. Answer the question based only on "
+        "the provided context. If the context does not contain enough "
+        "information to answer the question, reply: 'The provided context "
+        "does not contain enough information to answer this question.'"
+    )
+    user_content = f"Context:\n{joined_context}\n\nQuestion: {query}"
+
+    prompt = (
+        f"<|im_start|>system\n{system_instruction}<|im_end|>\n"
+        f"<|im_start|>user\n{user_content}<|im_end|>\n"
+        f"<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    )
 
     return prompt
 

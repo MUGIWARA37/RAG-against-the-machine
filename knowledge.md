@@ -27,11 +27,118 @@ Sequential scanning over 14,000+ chunks takes minutes per query. An **inverted i
 $$\text{inverted\_index}[w] = [(doc\_id_1, f_1), (doc\_id_2, f_2), \dots]$$
 During search, the scoring algorithm only inspects documents containing the query words, reducing retrieval time from seconds to milliseconds (< 0.02s for 100 queries).
 
+### 1.5 Instruction-Tuned Model (Supervised Fine-Tuning - SFT)
+An instruction-tuned model is a pretrained LLM that has been further fine-tuned on curated (instruction, response) pairs so it learns to interpret natural-language commands and produce the appropriate output. It's a form of supervised fine-tuning (SFT) where the loss is computed only on the response tokens, conditioning the model on the instruction.
+
+* **ChatML (Chat Markup Language) Training:** The Qwen model family (including `Qwen/Qwen3-0.6B`) is explicitly trained on the **ChatML** format. During fine-tuning, every training sample is structured with special demarcation tokens:
+  - `<|im_start|>system\n...<|im_end|>`: Defines the system role, embedding strict behavioral rules and grounding constraints.
+  - `<|im_start|>user\n...<|im_end|>`: Defines the user input and reference context.
+  - `<|im_start|>assistant\n...<|im_end|>`: Defines the expected model output tokens.
+  
+  Because Qwen's weights were conditioned on this exact markup during SFT, feeding it raw plain text causes it to fall back to generic autocomplete mode (causing hallucinations). Formatting inputs with ChatML via `tokenizer.apply_chat_template` is what allows the model to respect system-level negative constraints.
+
+### 1.6 Small LLM Constraints & Chat Template Strategy
+The mandatory model `Qwen/Qwen3-0.6B` is an ultra-small 0.6B parameter instruction-tuned model. Prompt formatting has a profound effect on its behavior:
+* **The "Hallucination vs Over-Refusal" Dilemma:**
+  - With naive completion prompts (`Context:... Question:... Answer:`), when an out-of-scope question is asked (e.g., "What is the capital of France?"), the base continuation mechanism bypasses the context and hallucinates facts from pre-training memory.
+  - Conversely, putting rigid negative rules directly into unstructured text prompts can induce trigger bias, causing the small model to parrot refusals even on complex technical code questions.
+* **The Native Solution — `tokenizer.apply_chat_template`:**
+  - `Qwen/Qwen3-0.6B` comes trained with ChatML role markup (`<|im_start|>system`, `<|im_start|>user`, `<|im_start|>assistant`).
+  - By using `tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)`, we cleanly separate:
+    1. **System Role:** Explicit grounding instructions: *"You are a code and documentation assistant. Answer the question using only the context provided. If the answer is not mentioned in the context, say that the context does not contain enough information to answer."*
+    2. **User Role:** Retrieved context chunks followed by the target question.
+    3. **Assistant Role:** Generation prompt initiated with empty thinking tags `<think>\n\n</think>`, avoiding runaway reasoning loops on CPU.
+  - This achieves both goals simultaneously: out-of-scope queries produce explicit refusals, while technical queries (such as LoRA endpoints, MoE activation formats, and PagedAttention mechanisms) are answered with high fidelity.
+* **Separation of Concerns:** Unanswerable questions with zero retrieval hits are handled defensively in application code (`if not item.retrieved_sources`), returning the standard refusal message instantly without relying on the LLM to self-refuse.
+* **Repetition Stripping:** The generation wrapper strips subsequent prompt delimiters (`\nAnswer:`, `\nQuestion:`, `</think>`) to deliver crisp, single-answer outputs.
+
+#### Code Example: How to Use `apply_chat_template`
+
+```python
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+# 1. Initialize tokenizer and model
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
+model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B")
+
+# 2. Build structured role messages
+messages = [
+    {
+        "role": "system",
+        "content": (
+            "You are a code and documentation assistant. "
+            "Answer the question using only the context provided. "
+            "If the answer is not mentioned in the context, say that the "
+            "context does not contain enough information to answer."
+        ),
+    },
+    {
+        "role": "user",
+        "content": f"Context:\n{joined_context}\n\nQuestion: {query}",
+    },
+]
+
+# 3. Apply the ChatML template
+prompt_str = tokenizer.apply_chat_template(
+    messages,
+    tokenize=False,             # Returns formatted string
+    add_generation_prompt=True, # Appends '<|im_start|>assistant\n'
+    enable_thinking=False,      # Closes <think> tags for fast direct answer
+)
+
+# 4. Generate answer
+inputs = tokenizer(prompt_str, return_tensors="pt")
+prompt_len = inputs.input_ids.shape[1]
+
+with torch.inference_mode():
+    output_tokens = model.generate(**inputs, max_new_tokens=100)
+
+answer = tokenizer.decode(
+    output_tokens[0][prompt_len:], skip_special_tokens=True
+).strip()
+```
+
+#### Rendered ChatML Prompt Structure
+
+The template transforms the message objects into the exact text sequence:
+
+```text
+<|im_start|>system
+You are a code and documentation assistant. Answer the question using only the context provided. If the answer is not mentioned in the context, say that the context does not contain enough information to answer.<|im_end|>
+<|im_start|>user
+Context:
+... [retrieved code / doc chunks] ...
+
+Question: What is PagedAttention?<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+```
+
 ---
 
 ## 2. Mathematical Formulations
 
-### 2.1 Robertson-Spärck Jones BM25 Algorithm
+### 2.1 Comparison: TF vs. TF-IDF vs. BM25
+
+| Method | Formula | Flaws & Limitations |
+|---|---|---|
+| **TF**<br/>*(Term Frequency)* | $\text{TF}(t, D) = f(t, D)$ | Treats all words equally. High-frequency stop words (e.g. `"to"`, `"a"`, `"def"`) dominate search results over rare, high-signal terms. |
+| **TF-IDF**<br/>*(Term Frequency - Inverse Document Frequency)* | $\text{TF-IDF}(t, D) = f(t, D) \cdot \log\left(\frac{N}{n(t)}\right)$ | **1. No Term Saturation:** Linear scaling allows keyword-stuffed documents to artificially dominate.<br/>**2. Document Length Bias:** Unfairly favors long documents simply because they contain more total words. |
+| **BM25**<br/>*(Best Matching 25)* | $\sum_{i=1}^{m} \text{IDF}(q_i) \cdot \frac{f(q_i, D) \cdot (k_1 + 1)}{f(q_i, D) + k_1 \cdot \left(1 - b + b \cdot \frac{\|D\|}{\text{avgdl}}\right)}$ | Resolves both flaws: $k_1$ enforces an asymptotic saturation ceiling on repeated words, and $b$ normalizes against average document length ($\text{avgdl}$). |
+
+#### Feature Comparison Summary:
+
+| Feature | Term Frequency (TF) | TF-IDF | BM25 |
+|---|:---:|:---:|:---:|
+| Counts word occurrences | ✅ Yes | ✅ Yes | ✅ Yes |
+| Penalizes common words (via IDF) | ❌ No | ✅ Yes | ✅ Yes |
+| Caps repeated words (Saturation via $k_1$) | ❌ No | ❌ No | ✅ Yes |
+| Normalizes document length (via $b$ and $\text{avgdl}$) | ❌ No | ❌ No | ✅ Yes |
+
+### 2.2 Robertson-Spärck Jones BM25 Algorithm
 BM25 (Best Matching 25) balances term frequency saturation with document length normalization:
 
 $$\text{Score}(D, Q) = \sum_{i=1}^{m} \text{IDF}(q_i) \cdot \frac{f(q_i, D) \cdot (k_1 + 1)}{f(q_i, D) + k_1 \cdot \left(1 - b + b \cdot \frac{|D|}{\text{avgdl}}\right)}$$
@@ -43,7 +150,7 @@ Where:
 * $k_1 = 1.5$: Term frequency saturation parameter. Controls how quickly the score plateau is reached.
 * $b = 0.75$: Length normalization parameter. $b=1$ fully normalizes for document length; $b=0$ ignores document length.
 
-### 2.2 Robertson-Spärck Jones Inverse Document Frequency (RSJ-IDF)
+### 2.3 Robertson-Spärck Jones Inverse Document Frequency (RSJ-IDF)
 To prevent negative IDF values for words that appear in over 50% of documents, we use the smoothed RSJ-IDF formula:
 
 $$\text{IDF}(q_i) = \ln\left(1 + \frac{N - n(q_i) + 0.5}{n(q_i) + 0.5}\right)$$
@@ -52,7 +159,7 @@ Where:
 * $N$: Total number of chunks in the corpus.
 * $n(q_i)$: Number of chunks containing term $q_i$.
 
-### 2.3 1D Character-Span IoU (Intersection over Union)
+### 2.4 1D Character-Span IoU (Intersection over Union)
 Measures the overlap between retrieved character bounds $[s_1, e_1]$ and ground truth bounds $[s_2, e_2]$ within the same file:
 
 $$\text{Intersection} = \max(0, \min(e_1, e_2) - \max(s_1, s_2))$$
@@ -63,7 +170,7 @@ A retrieved source is a **match** if and only if:
 1. `retrieved.file_path == ground_truth.file_path`
 2. $\text{IoU} > 0.05$ (strictly greater than 5% overlap)
 
-### 2.4 Recall@k
+### 2.5 Recall@k
 $$\text{Recall@}k = \frac{1}{|Q|} \sum_{q \in Q} \frac{|\text{matched ground truth sources in top } k|}{|\text{total ground truth sources for } q|}$$
 
 ---
@@ -160,4 +267,9 @@ src/
 > The 0.05 threshold means that if at least 5% of the characters overlap and the `file_path` matches, the retrieved snippet contains the relevant context and counts as a successful hit.
 
 ### Q5: How did you solve the disk space limit on 42 school computers?
-> *Answer:* 42 user home directories have strict 5GB quota limits. PyTorch and Hugging Face weights exceed this limit. We redirected `.venv`, `UV_CACHE_DIR`, and `HF_HOME` to `/goinfre/rhlou`, keeping the home directory free and preventing disk exhaustion errors.
+> *Answer:* 42 user home directories have strict 5GB quota limits. PyTorch and Hugging Face weights exceed this limit. We automated cache routing in `Makefile` (`make install`): when `~/goinfre/` is detected, it dynamically creates `~/goinfre/` cache directories (`UV_CACHE_DIR`, `HF_HOME`, and `rag-venv`), symlinking `.venv` so the entire 5.5GB environment runs off local high-speed disk without consuming the user's home quota. On non-42 machines, it gracefully falls back to local storage.
+
+### Q6: How do you handle unanswerable questions or model hallucinations with small models?
+> *Answer:* Ultra-small models like `Qwen/Qwen3-0.6B` have limited reasoning capacity and tend to autocomplete from pre-training memory if prompts lack role boundaries, or conversely suffer from over-refusal if negative instructions are placed in unstructured text. We resolve this with a two-tier approach:
+> 1. **Application-level defense:** If retrieval returns no sources (`not item.retrieved_sources`), the CLI immediately outputs the standard refusal without invoking the LLM, saving CPU cycles.
+> 2. **Native ChatML template (`tokenizer.apply_chat_template`):** When sources are present, we wrap the prompt into formal `system` and `user` roles using the tokenizer's chat template. The system prompt instructs the model to refuse if the information is absent from the context. This stops hallucinations on out-of-scope questions while preserving high-accuracy answering on technical code questions.

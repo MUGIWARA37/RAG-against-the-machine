@@ -1,7 +1,16 @@
+ifneq ($(wildcard $(HOME)/goinfre/.),)
+  export UV_CACHE_DIR := $(HOME)/goinfre/.cache/uv
+  export HF_HOME := $(HOME)/goinfre/.cache/huggingface
+endif
+
 .PHONY: install run debug clean lint lint-strict
 
 install:
-	uv sync
+	@if [ -d "$$HOME/goinfre" ]; then \
+		mkdir -p "$$HOME/goinfre/rag-venv" "$$HOME/goinfre/.cache/uv" "$$HOME/goinfre/.cache/huggingface" && \
+		ln -sfn "$$HOME/goinfre/rag-venv" .venv; \
+	fi
+	uv sync --python 3.14
 
 run:
 	uv run python -m src
@@ -12,7 +21,6 @@ debug:
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 
 lint:

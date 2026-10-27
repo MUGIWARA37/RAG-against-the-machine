@@ -177,9 +177,13 @@ class Cli:
             )
             return
 
-        prompt = build_prompt(query, retrieved_sources, master_chunks)
-
         model = Small_llm()
+        prompt = build_prompt(
+            query,
+            retrieved_sources,
+            master_chunks,
+            tokenizer=model.tokenizer,
+        )
         ans = generate_answer(prompt, model)
 
         print(f"\nQuestion: {query}\n")
@@ -261,8 +265,8 @@ class Cli:
         ):
             if not item.retrieved_sources:
                 ans = (
-                    "The provided context does not contain enough "
-                    "information to answer this question."
+                    "The context does not contain enough "
+                    "information to answer the question."
                 )
             else:
                 prompt = build_prompt(
@@ -270,6 +274,7 @@ class Cli:
                     item.retrieved_sources,
                     master_chunks,
                     chunks_lookup,
+                    tokenizer=model.tokenizer,
                 )
                 ans = generate_answer(prompt, model)
             answers.append(

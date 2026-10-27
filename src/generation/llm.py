@@ -1,3 +1,4 @@
+import os
 from typing import Any, List
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -23,6 +24,12 @@ class Small_llm:
             Exception: If the model cannot be loaded from Hugging Face.
         """
         self.model_id = model_id
+
+        home_goinfre = os.path.expanduser("~/goinfre")
+        if "HF_HOME" not in os.environ and os.path.isdir(home_goinfre):
+            goinfre_hf = os.path.join(home_goinfre, ".cache", "huggingface")
+            os.makedirs(goinfre_hf, exist_ok=True)
+            os.environ["HF_HOME"] = goinfre_hf
 
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
@@ -67,8 +74,19 @@ class Small_llm:
             )[0][tokenized_prompt_lengh:]
 
         output = self.tokenizer.decode(logits, skip_special_tokens=True)
+        text = str(output).strip()
+        if "</think>" in text:
+            text = text.split("</think>")[-1].strip()
+        for delimiter in (
+            "\nAnswer:",
+            "\nQuestion:",
+            "\nThe answer is:",
+            "\nBased on the answer",
+        ):
+            if delimiter in text:
+                text = text.split(delimiter)[0].strip()
 
-        return str(output).strip()
+        return text
 
 
 def build_prompt(
@@ -76,10 +94,11 @@ def build_prompt(
     sources: List[MinimalSource],
     master_chunks: list[dict[str, Any]],
     chunks_lookup: dict[tuple[str, int, int], str] | None = None,
+    tokenizer: Any | None = None,
 ) -> str:
     """
     Constructs a prompt for the LLM combining the user's query and the
-    retrieved context.
+    retrieved context using a chat template.
 
     Args:
         query (str): The user's question.
@@ -87,6 +106,8 @@ def build_prompt(
         master_chunks (list[dict[str, Any]]): All chunk dictionaries.
         chunks_lookup (dict[tuple[str, int, int], str] | None): Optional
             precomputed lookup mapping from (path, start, end) to text.
+        tokenizer (Any | None): Optional tokenizer instance implementing
+            apply_chat_template.
 
     Returns:
         str: The fully formatted prompt string ready to be fed to the model.
@@ -112,21 +133,43 @@ def build_prompt(
 
     joined_context = "\n\n".join(context)
 
-    system_instruction = (
-        "You are a helpful assistant. Answer the question based only on "
-        "the provided context. If the context does not contain enough "
-        "information to answer the question, reply: 'The provided context "
-        "does not contain enough information to answer this question.'"
+    system_prompt = (
+        "You are a code and documentation assistant. "
+        "Answer the question using only the context provided. "
+        "If the answer is not mentioned in the context, say that the "
+        "context does not contain enough information to answer."
     )
     user_content = f"Context:\n{joined_context}\n\nQuestion: {query}"
 
-    prompt = (
-        f"<|im_start|>system\n{system_instruction}<|im_end|>\n"
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+    if tokenizer is not None and hasattr(tokenizer, "apply_chat_template"):
+        try:
+            return str(
+                tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+            )
+        except TypeError:
+            return str(
+                tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            )
+
+    return (
+        f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
         f"<|im_start|>user\n{user_content}<|im_end|>\n"
         f"<|im_start|>assistant\n<think>\n\n</think>\n\n"
     )
-
-    return prompt
 
 
 def generate_answer(prompt: str, model: Small_llm) -> str:

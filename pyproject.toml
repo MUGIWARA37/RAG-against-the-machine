@@ -1,11 +1,8 @@
 [project]
-name = "rag"
+name = "RAG-against-the-machine"
 version = "0.1.0"
-description = "Add your description here"
+description = "A programe build to extract data from a dataset and feeds it to the LLM"
 readme = "README.md"
-authors = [
-    { email = "hloureda@gmail.com" }
-]
 requires-python = ">=3.14"
 dependencies = [
     "langchain-text-splitters>=1.1.2",
@@ -15,7 +12,7 @@ dependencies = [
     "torch>=2.2.0",
     "transformers>=4.40.0",
     "accelerate>=0.29.0",
-    "fire>=0.7.1",
+    "fire>=0.7.1"
 ]
 
 [build-system]

@@ -171,7 +171,7 @@ Evaluated on public validation datasets using 1D character-span IoU threshold $>
 
 1. **Storage Quotas on 42 Workstations:**
    - 42 user home directories have strict 5GB quota limits. PyTorch wheels and Hugging Face model weights easily exceed this.
-   - *Solution:* Relocated virtual environment (`.venv`), UV cache (`UV_CACHE_DIR`), and Hugging Face cache (`HF_HOME`) to `/goinfre/rhlou`, preserving space while running locally.
+   - *Solution:* Automated via `make install`: dynamically detects `~/goinfre/`, creates caches, and links `.venv` to preserve home quota. Falls back seamlessly to standard `uv sync` on other environments.
 2. **CPython 3.15 Compatibility:**
    - The workstation environment provided Python 3.15, for which compiled PyTorch wheels did not yet exist.
    - *Solution:* Pinned `.python-version` to `3.14` via `uv python pin 3.14` to ensure stable wheel installation.
@@ -198,7 +198,7 @@ make install
 ```
 
 ### 2. Makefile Rules
-- `make install`: Syncs project dependencies with `uv sync`.
+- `make install`: Automatically sets up dependencies. On 42 systems, creates cache directories in `~/goinfre` and symlinks `.venv`; on standard machines, runs `uv sync`.
 - `make run`: Executes the main module via `uv run python -m src`.
 - `make debug`: Runs the CLI in interactive pdb debugging mode.
 - `make clean`: Removes `__pycache__`, `.mypy_cache`, and temporary artifacts.

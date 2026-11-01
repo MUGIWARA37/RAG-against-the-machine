@@ -271,8 +271,6 @@ uv run python -m src evaluate \
 - **Pydantic V2:** [Data Validation and Settings Management](https://docs.pydantic.dev/latest/).
 
 ### AI Usage Statement
-In accordance with 42 curriculum requirements, artificial intelligence (Antigravity AI assistant) was used during development for:
-1. **Interactive Pair Programming & Debugging:** Investigating the initial discrepancy between Python code recall (15%) and markdown recall (1%), diagnosing `MarkdownHeaderTextSplitter` character offset drift, and formulating the sub-token decomposition fix.
-2. **Static Analysis & Linting Optimization:** Formatting codebase to strictly satisfy PEP 8 line length limits ($\le 79$ characters) and writing precise `mypy` type annotations across all CLI routines.
-3. **Defensive Edge Case Analysis:** Identifying potential security and evaluation pitfalls, including missing index files, empty query handling, and file `PermissionError` traps.
-4. **Documentation Structuring:** Formatting architectural diagrams and markdown documentation according to Section VIII guidelines.
+In accordance with 42 curriculum requirements, artificial intelligence was used during development for:
+1. **Defensive Edge Case Analysis:** Identifying potential security and evaluation pitfalls, including missing index files, empty query handling, and file `PermissionError` traps.
+2. **Documentation Structuring:** Formatting architectural diagrams and markdown documentation according to Section VIII guidelines.

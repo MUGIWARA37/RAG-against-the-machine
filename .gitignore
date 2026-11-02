@@ -11,3 +11,4 @@ __pycache__/
 # Logs and local files
 *.log
 test_commands.md
+data/processed/query_cache.json

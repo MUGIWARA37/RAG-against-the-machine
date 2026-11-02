@@ -273,3 +273,10 @@ src/
 > *Answer:* Ultra-small models like `Qwen/Qwen3-0.6B` have limited reasoning capacity and tend to autocomplete from pre-training memory if prompts lack role boundaries, or conversely suffer from over-refusal if negative instructions are placed in unstructured text. We resolve this with a two-tier approach:
 > 1. **Application-level defense:** If retrieval returns no sources (`not item.retrieved_sources`), the CLI immediately outputs the standard refusal without invoking the LLM, saving CPU cycles.
 > 2. **Native ChatML template (`tokenizer.apply_chat_template`):** When sources are present, we wrap the prompt into formal `system` and `user` roles using the tokenizer's chat template. The system prompt instructs the model to refuse if the information is absent from the context. This stops hallucinations on out-of-scope questions while preserving high-accuracy answering on technical code questions.
+
+### Q7: How is Bonus #4 (Caching) implemented and why on disk?
+> *Answer:* CLI invocations execute in separate Python processes, so in-memory caches (such as `@lru_cache`) evaporate as soon as the command terminates. We built a persistent `QueryCache` in `src/retrieval/cache.py` storing entries on disk under `data/processed/query_cache.json`:
+> - **Search Queries:** Caches `search:{query}:{k}` with retrieved source spans.
+> - **Answers:** Caches `answer:{query}:{k}` with LLM generated answers.
+> - **Performance Impact:** Repeated queries trigger `[CACHE HIT]`, bypassing BM25 tokenization and skipping LLM CPU weight loading and inference entirely (returning in < 0.01s).
+> - **Invalidation:** Whenever `uv run python -m src index` is triggered, `QueryCache().clear()` automatically purges the cache to prevent stale retrieval.

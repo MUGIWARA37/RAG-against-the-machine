@@ -13,6 +13,7 @@ from src.models import (
 )
 from src.retrieval.evaluator import evaluate_search_results
 from src.retrieval.searcher import search_dataset as run_search
+from src.retrieval.cache import QueryCache
 
 
 class Cli:
@@ -28,6 +29,7 @@ class Cli:
         print(f"Starting indexing with max_chunk_size={max_chunk_size}...")
         chunks = gather_corpus("data/raw", max_chunk_size)
         build_and_save_index(chunks, save_dir="data/processed")
+        QueryCache().clear()
         print("Ingestion complete! Index saved under data/processed/")
 
     def search(self, query: str, k: int = 5) -> None:
@@ -46,6 +48,15 @@ class Cli:
             print("Error: Query cannot be empty.")
             return
 
+        cache = QueryCache()
+        cached_sources = cache.get("search", query, k)
+
+        if cached_sources is not None and isinstance(cached_sources, list):
+            print("[CACHE HIT] Loaded search results from cache.")
+            for line in cached_sources:
+                print(line)
+            return
+
         question = UnansweredQuestion(question=query)
         results = run_search([question], k)
 
@@ -56,12 +67,15 @@ class Cli:
             print("No matching sources found for the given query.")
             return
 
-        for source in results.search_results[0].retrieved_sources:
-            print(
-                f"{source.file_path} "
-                f"[{source.first_character_index}:"
-                f"{source.last_character_index}]"
-            )
+        sources_to_display = [
+            f"{s.file_path} "
+            f"[{s.first_character_index}:{s.last_character_index}]"
+            for s in results.search_results[0].retrieved_sources
+        ]
+        cache.set("search", query, k, sources_to_display)
+
+        for source_str in sources_to_display:
+            print(source_str)
 
     def search_dataset(
         self,
@@ -147,6 +161,15 @@ class Cli:
             print("Error: Query cannot be empty.")
             return
 
+        cache = QueryCache()
+        cached_ans = cache.get("answer", query, k)
+
+        if cached_ans is not None and isinstance(cached_ans, str):
+            print("[CACHE HIT] Loaded answer from cache.")
+            print(f"\nQuestion: {query}\n")
+            print(f"Answer:\n{cached_ans}\n")
+            return
+
         chunks_path = Path("data/processed/chunks.pkl")
         if not chunks_path.is_file():
             print(
@@ -185,6 +208,7 @@ class Cli:
             tokenizer=model.tokenizer,
         )
         ans = generate_answer(prompt, model)
+        cache.set("answer", query, k, ans)
 
         print(f"\nQuestion: {query}\n")
         print(f"Answer:\n{ans}\n")

@@ -1,16 +1,13 @@
-ifneq ($(wildcard $(HOME)/goinfre/.),)
-  export UV_CACHE_DIR := $(HOME)/goinfre/.cache/uv
-  export HF_HOME := $(HOME)/goinfre/.cache/huggingface
-endif
-
 .PHONY: install run debug clean lint lint-strict
 
 install:
 	@if [ -d "$$HOME/goinfre" ]; then \
 		mkdir -p "$$HOME/goinfre/rag-venv" "$$HOME/goinfre/.cache/uv" "$$HOME/goinfre/.cache/huggingface" && \
-		ln -sfn "$$HOME/goinfre/rag-venv" .venv; \
+		ln -sfn "$$HOME/goinfre/rag-venv" .venv && \
+		UV_CACHE_DIR="$$HOME/goinfre/.cache/uv" uv sync --python 3.14; \
+	else \
+		uv sync --python 3.14; \
 	fi
-	uv sync --python 3.14
 
 run:
 	uv run python -m src
@@ -30,4 +27,4 @@ lint:
 
 lint-strict:
 	uv run flake8 src/
-	uv run mypy src/ --strict --ignore-missing-imports
+	uv run mypy src/ --strict

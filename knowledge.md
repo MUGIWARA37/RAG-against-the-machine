@@ -158,6 +158,10 @@ $$\text{IDF}(q_i) = \ln\left(1 + \frac{N - n(q_i) + 0.5}{n(q_i) + 0.5}\right)$$
 Where:
 * $N$: Total number of chunks in the corpus.
 * $n(q_i)$: Number of chunks containing term $q_i$.
+* $0.5$: Smoothing parameter (pseudo-count from Jeffreys prior):
+  - Prevents division by zero if a term never occurs ($n(q_i) = 0$).
+  - Prevents $\log(0)$ or negative numbers if a term appears in all
+    documents ($n(q_i) = N$), keeping the fraction strictly positive.
 
 ### 2.4 1D Character-Span IoU (Intersection over Union)
 Measures the overlap between retrieved character bounds $[s_1, e_1]$ and ground truth bounds $[s_2, e_2]$ within the same file:
@@ -280,3 +284,33 @@ src/
 > - **Answers:** Caches `answer:{query}:{k}` with LLM generated answers.
 > - **Performance Impact:** Repeated queries trigger `[CACHE HIT]`, bypassing BM25 tokenization and skipping LLM CPU weight loading and inference entirely (returning in < 0.01s).
 > - **Invalidation:** Whenever `uv run python -m src index` is triggered, `QueryCache().clear()` automatically purges the cache to prevent stale retrieval.
+
+### Q8: Why use `defaultdict(int)` instead of a standard dict for `doc_freqs`?
+> *Answer:* We chose `defaultdict(int)` for three key reasons:
+> 1. **Single Hash Lookup vs. Double Lookup (Performance):**
+>    `d[w] = d.get(w, 0) + 1` performs two separate hash table lookups
+>    (one to read via `.get()`, one to write to `w`), plus Python method
+>    call overhead. In contrast, `self.doc_freqs[w] += 1` on a
+>    `defaultdict(int)` executes at the C level (`_collectionsmodule.c`),
+>    resolving the hash once and mutating in place. Across 14,000+ chunks
+>    and hundreds of thousands of tokens, this is ~2x faster.
+> 2. **Architectural Consistency:**
+>    `BM25Index` already uses `self.inverted_index = defaultdict(list)`.
+>    Using `defaultdict(int)` for `self.doc_freqs` maintains consistent,
+>    idiomatic collection patterns across the indexing pipeline.
+> 3. **Clean Code & Direct Mathematical Mapping:**
+>    `self.doc_freqs[word] += 1` directly reflects the mathematical
+>    increment of document frequency $n(q_i)$ without boilerplate.
+
+### Q9: In BM25 IDF, what does the `0.5` constant represent?
+> *Answer:* `0.5` is a smoothing parameter (Bayesian pseudo-count) derived
+> from the Robertson-Spärck Jones probabilistic model (Jeffreys prior in a
+> $2 \times 2$ contingency table). It serves two critical safety roles:
+> 1. **Prevents division by zero:** If a query word appears in 0 documents
+>    ($n(q_i) = 0$), the denominator evaluates to $0.5$ instead of $0$.
+> 2. **Prevents $\log(0)$ and undefined scores:** If a word appears in every
+>    document ($n(q_i) = N$), the numerator evaluates to $0.5$ instead of $0$.
+>    Combined with $\ln(1 + \dots)$, this ensures IDF is always finite and
+>    non-negative.
+
+

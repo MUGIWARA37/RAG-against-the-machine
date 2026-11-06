@@ -20,12 +20,14 @@ class Bm25:
             k1 (float): Term frequency saturation parameter (default 1.5).
             b (float): Length normalization parameter (default 0.75).
         """
-        self.corpus_size = len(corpus)
-        self.k1 = k1
-        self.b = b
+        self.corpus_size = len(corpus)  # N (total documents)
+        self.k1 = k1  # k1 (term saturation parameter)
+        self.b = b  # b (length normalization parameter)
 
+        # |D| (document length for each chunk)
         self.doc_lens = [len(doc) for doc in corpus]
         total_tokens = sum(self.doc_lens)
+        # avgdl (average document length across corpus)
         self.avgdl = (
             total_tokens / self.corpus_size if self.corpus_size > 0 else 0.0
         )
@@ -36,14 +38,16 @@ class Bm25:
         self.doc_freqs: Dict[str, int] = defaultdict(int)
 
         for doc_id, doc in enumerate(corpus):
-            freqs = Counter(doc)
+            freqs = Counter(doc)  # f(q_i, D) (term frequency in document)
             for word, freq in freqs.items():
                 self.inverted_index[word].append((doc_id, freq))
-                self.doc_freqs[word] += 1
+                self.doc_freqs[word] += 1  # n(q_i) (document frequency)
 
         self.idf: Dict[str, float] = {}
         for word, n_w in self.doc_freqs.items():
+            # (N - n(q_i) + 0.5) / (n(q_i) + 0.5)
             val = (self.corpus_size - n_w + 0.5) / (n_w + 0.5)
+            # RSJ-IDF: IDF(q_i) = ln(1 + val)
             self.idf[word] = math.log(1.0 + val)
 
     def get_top_n(
@@ -69,14 +73,18 @@ class Bm25:
             if word not in self.inverted_index:
                 continue
 
-            idf = self.idf[word]
+            idf = self.idf[word]  # IDF(q_i)
 
             for doc_id, freq in self.inverted_index[word]:
-                doc_len = self.doc_lens[doc_id]
+                doc_len = self.doc_lens[doc_id]  # |D| (current doc length)
+                # Numerator: f(q_i, D) * (k1 + 1)
                 numerator = freq * (self.k1 + 1.0)
+                # Length normalization: 1 - b + b * (|D| / avgdl)
                 len_norm = 1.0 - self.b + self.b * (doc_len / self.avgdl)
+                # Denominator: f(q_i, D) + k1 * len_norm
                 denominator = freq + self.k1 * len_norm
 
+                # Score(D, Q) += IDF(q_i) * (Numerator / Denominator)
                 scores[doc_id] += idf * (numerator / denominator)
 
         top_doc_ids = sorted(

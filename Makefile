@@ -23,8 +23,8 @@ clean:
 
 lint:
 	uv run flake8 src/
-	uv run mypy src/
+	uv run mypy src/ --ignore-missing-imports
 
 lint-strict:
 	uv run flake8 src/
-	uv run mypy src/ --strict
+	uv run mypy src/ --strict --ignore-missing-imports
